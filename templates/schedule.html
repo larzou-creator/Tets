@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Time Shift CP-SAT Scheduler — Argon Dashboard</title>
+  <!-- Bootstrap 5 & Argon Dashboard Core CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --argon-bg: #0f172a;
+      --argon-surface: #1e293b;
+      --argon-border: #334155;
+      --argon-boss-bg: rgba(16, 185, 129, 0.14);
+      --argon-boss-border: rgba(16, 185, 129, 0.4);
+    }
+    body {
+      background-color: var(--argon-bg);
+      color: #f8fafc;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    }
+    .card {
+      background-color: var(--argon-surface);
+      border: 1px solid var(--argon-border);
+      border-radius: 0.75rem;
+    }
+    .schedule-viewport {
+      max-height: 74vh;
+      overflow: auto;
+      position: relative;
+    }
+    .table-schedule {
+      border-collapse: separate;
+      border-spacing: 0;
+      width: max-content;
+      min-width: 100%;
+      font-variant-numeric: tabular-nums;
+    }
+    .table-schedule th,
+    .table-schedule td {
+      border-bottom: 1px solid var(--argon-border);
+      border-right: 1px solid var(--argon-border);
+      padding: 0.4rem 0.6rem;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    /* Sticky Row 0 (Dates) and Row 1 (Boss Coverage Badge M:x | T:y) */
+    .table-schedule thead tr:nth-child(1) th {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background-color: #0f172a;
+    }
+    .table-schedule thead tr:nth-child(2) th {
+      position: sticky;
+      top: 42px;
+      z-index: 20;
+      background-color: #162032;
+    }
+    /* Sticky Column 0 (Employee Name + Role Badge) */
+    .sticky-col-0 {
+      position: sticky;
+      left: 0;
+      z-index: 15;
+      background-color: #1e293b;
+      min-width: 220px;
+    }
+    .table-schedule thead .sticky-col-0 {
+      z-index: 30;
+      background-color: #0f172a;
+    }
+    .row-boss .sticky-col-0 {
+      background-color: #0d2822;
+    }
+    .row-boss td {
+      background-color: var(--argon-boss-bg);
+    }
+    .shift-cell {
+      cursor: pointer;
+      font-size: 0.78rem;
+      text-align: center;
+      transition: background-color 120ms ease;
+    }
+    .shift-cell:hover {
+      outline: 1px solid #38bdf8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid py-4 px-4">
+    <!-- Dismissible Argon Alert for Infeasible Constraints -->
+    <div id="infeasibleAlert" class="alert alert-danger alert-dismissible fade d-none" role="alert">
+      <strong>Infeasible Schedule Detected!</strong>
+      <span id="infeasibleMessage">Minimum Timeshift Boss coverage (M &ge; 1, E &ge; 1) or 12-hour statutory rest constraint violated.</span>
+      <button type="button" class="btn-close" onclick="document.getElementById('infeasibleAlert').classList.add('d-none')" aria-label="Close"></button>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center py-3 px-4 border-bottom border-secondary">
+        <div>
+          <h5 class="mb-0 fw-bold text-white">25th-to-25th Operations Research Shift Roster</h5>
+          <small class="text-secondary">OR-Tools CP-SAT &middot; 5 Work / 2 Consecutive LIBRE &middot; Min 1 Timeshift Boss per Core Shift</small>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-success fw-semibold" onclick="runCpSatSolver()">Re-Optimize Schedule (CP-SAT)</button>
+        </div>
+      </div>
+
+      <div class="card-body p-0">
+        <div class="schedule-viewport">
+          <table class="table table-dark table-schedule mb-0" id="scheduleGrid">
+            <thead>
+              <tr id="dateHeaderRow">
+                <th class="sticky-col-0">Employee / Role</th>
+              </tr>
+              <tr id="coverageHeaderRow">
+                <th class="sticky-col-0 text-secondary small">Boss Coverage (M:x | T:y)</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SHIFT_CYCLE = [
+      "07:00 a 15:00",
+      "14:00 a 22:00",
+      "10:00 a 18:00",
+      "LIBRE",
+      "VACACIONES",
+      "BAJA"
+    ];
+
+    let currentData = null;
+
+    async function runCpSatSolver(locks = []) {
+      const res = await fetch("/api/solve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ num_weeks: 5, start_monday: "2026-09-21", locks })
+      });
+      const data = await res.json();
+      if (data.status === "INFEASIBLE") {
+        const alertEl = document.getElementById("infeasibleAlert");
+        document.getElementById("infeasibleMessage").textContent = data.message;
+        alertEl.classList.remove("d-none");
+        alertEl.classList.add("show");
+        return;
+      }
+      currentData = data;
+      buildInitialTable(data);
+    }
+
+    function buildInitialTable(data) {
+      const dateRow = document.getElementById("dateHeaderRow");
+      const covRow = document.getElementById("coverageHeaderRow");
+      const tbody = document.getElementById("scheduleBody");
+
+      dateRow.innerHTML = '<th class="sticky-col-0">Employee / Role</th>';
+      covRow.innerHTML = '<th class="sticky-col-0 text-secondary small">Boss Coverage (M:x | T:y)</th>';
+      tbody.innerHTML = "";
+
+      data.dates.forEach((isoDate, dayIdx) => {
+        const thDate = document.createElement("th");
+        thDate.className = "text-center small";
+        thDate.textContent = isoDate.slice(5);
+        dateRow.appendChild(thDate);
+
+        const cov = data.daily_coverage[dayIdx];
+        const thCov = document.createElement("th");
+        thCov.id = `cov-badge-${dayIdx}`;
+        thCov.className = "text-center small";
+        thCov.innerHTML = `<span class="badge ${cov.morning_bosses >= 1 && cov.evening_bosses >= 1 ? 'bg-success' : 'bg-danger'}">M:${cov.morning_bosses} | T:${cov.evening_bosses}</span>`;
+        covRow.appendChild(thCov);
+      });
+
+      data.schedule.forEach((row) => {
+        const tr = document.createElement("tr");
+        if (row.is_boss === 1) tr.classList.add("table-success", "row-boss");
+
+        const tdName = document.createElement("td");
+        tdName.className = "sticky-col-0 fw-semibold";
+        tdName.innerHTML = `${row.name} <span class="badge ${row.is_boss ? 'bg-success' : 'bg-secondary'} ms-1">${row.is_boss ? 'BOSS' : 'STAFF'}</span>`;
+        tr.appendChild(tdName);
+
+        row.shifts.forEach((shiftVal, dayIdx) => {
+          const td = document.createElement("td");
+          td.id = `cell-e${row.employee_id}-d${dayIdx}`;
+          td.className = "shift-cell";
+          td.textContent = shiftVal;
+          td.onclick = () => mutateSingleCell(row.employee_id, dayIdx);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Zero-Lag UI Engineering: mutate only the target cell DOM node and that single day's coverage badge
+    function mutateSingleCell(employeeId, dayIdx) {
+      const rowObj = currentData.schedule.find(r => r.employee_id === employeeId);
+      if (!rowObj) return;
+      const curShift = rowObj.shifts[dayIdx];
+      const nextShift = SHIFT_CYCLE[(SHIFT_CYCLE.indexOf(curShift) + 1) % SHIFT_CYCLE.length];
+      rowObj.shifts[dayIdx] = nextShift;
+
+      const cellEl = document.getElementById(`cell-e${employeeId}-d${dayIdx}`);
+      if (cellEl) cellEl.textContent = nextShift;
+
+      // Recompute only dayIdx Boss Coverage badge (M:x | T:y)
+      let mBoss = 0, eBoss = 0;
+      currentData.schedule.forEach(r => {
+        if (r.is_boss === 1) {
+          if (r.shifts[dayIdx] === "07:00 a 15:00") mBoss++;
+          if (r.shifts[dayIdx] === "14:00 a 22:00") eBoss++;
+        }
+      });
+      const covEl = document.getElementById(`cov-badge-${dayIdx}`);
+      if (covEl) {
+        const ok = mBoss >= 1 && eBoss >= 1;
+        covEl.innerHTML = `<span class="badge ${ok ? 'bg-success' : 'bg-danger'}">M:${mBoss} | T:${eBoss}</span>`;
+      }
+    }
+
+    runCpSatSolver();
+  </script>
+</body>
+</html>

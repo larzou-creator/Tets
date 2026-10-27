@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for adding a dual-interaction Swap Shifts workflow (toolbar Swap Mode + cell popover swap selector) with automatic manual lock persistence, and a complete Spanish/English (ES/EN) localization switcher across the UI, dashboard, alerts, and PDF export.",
+  "updatedAt":  "2026-10-25T10:35:14.129587029Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

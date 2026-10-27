@@ -1,0 +1,6 @@
+{
+  "name": "Argon Shift — OR-Tools CP-SAT Workforce Scheduler",
+  "description": "Operations Research Workforce Shift Scheduling System enforcing 5-work/2-consecutive-rest cyclic triad templates, 12-hour statutory rest, and mandatory Timeshift Boss coverage.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
